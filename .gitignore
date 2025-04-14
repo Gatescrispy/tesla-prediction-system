@@ -1,0 +1,25 @@
+# Environnements virtuels
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Fichiers générés
+*.pkl
+*.log
+*.csv
+*.png
+resultats/reports/
+resultats/deployment/
+resultats/templates/
+
+# Fichiers système
+.DS_Store
+.env
+.idea/
+.vscode/
+
+# Fichiers de distribution
+dist/
+build/
+*.egg-info/
