@@ -224,4 +224,153 @@ def predict_tesla_prices(model, metadata, steps=30, last_price=None, include_int
         forecast_df['Prix_Lower'] = lower_prices
         forecast_df['Prix_Upper'] = upper_prices
     
-    return forecast_df
+    return forecast_df 
+
+# Fonction pour visualiser les prévisions
+def plot_tesla_forecast(forecast_df, last_price, title="Prévision du Prix Tesla"):
+    """Visualise les prévisions avec intervalles de confiance"""
+    plt.figure(figsize=(12, 7))
+    
+    # Tracer la dernière valeur connue
+    last_date = forecast_df['Date'].iloc[0] - pd.Timedelta(days=1)
+    plt.plot([last_date], [last_price], 'ko', markersize=8, label='Dernier prix connu')
+    
+    # Tracer les prévisions
+    plt.plot(forecast_df['Date'], forecast_df['Prix_Prévu'], 'b-', label='Prix prévu')
+    
+    # Tracer les intervalles de confiance si disponibles
+    if 'Prix_Lower' in forecast_df.columns and 'Prix_Upper' in forecast_df.columns:
+        plt.fill_between(
+            forecast_df['Date'],
+            forecast_df['Prix_Lower'],
+            forecast_df['Prix_Upper'],
+            color='blue', alpha=0.2,
+            label='Intervalle de confiance (90%)'
+        )
+    
+    # Formater le graphique
+    plt.title(title, fontsize=16)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Prix ($)', fontsize=12)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    # Ajouter des annotations utiles
+    plt.annotate(
+        f"Dernière valeur: ${last_price:.2f}",
+        xy=(last_date, last_price),
+        xytext=(last_date - pd.Timedelta(days=5), last_price * 1.05),
+        arrowprops=dict(arrowstyle='->', color='black')
+    )
+    
+    # Retourner le prix prévu à 30 jours
+    final_price = forecast_df['Prix_Prévu'].iloc[-1]
+    plt.annotate(
+        f"Prévision à {len(forecast_df)} jours: ${final_price:.2f}",
+        xy=(forecast_df['Date'].iloc[-1], final_price),
+        xytext=(forecast_df['Date'].iloc[-1] - pd.Timedelta(days=7), final_price * 1.05),
+        arrowprops=dict(arrowstyle='->', color='black')
+    )
+    
+    plt.tight_layout()
+    return plt
+
+# Fonction pour sauvegarder le rapport de prévision
+def save_forecast_report(forecast_df, last_price, metadata, plot):
+    """Sauvegarde un rapport de prévision complet"""
+    
+    # Créer un dossier pour les rapports
+    report_dir = RESULTS_DIR / "reports"
+    os.makedirs(report_dir, exist_ok=True)
+    
+    # Générer un nom de fichier basé sur la date
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    base_filename = f"tesla_forecast_{today}"
+    
+    # Sauvegarder les données de prévision
+    forecast_df.to_csv(report_dir / f"{base_filename}.csv", index=False)
+    
+    # Sauvegarder le graphique
+    plot.savefig(report_dir / f"{base_filename}.png", dpi=300)
+    
+    # Générer un rapport HTML
+    model_type = metadata.get('type', 'Inconnu')
+    last_date = pd.to_datetime(metadata.get('last_date', 'Inconnu'))
+    final_price = forecast_df['Prix_Prévu'].iloc[-1]
+    change_pct = (final_price / last_price - 1) * 100
+    
+    html_content = f"""
+    <html>
+    <head>
+        <title>Rapport de Prévision Tesla - {today}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            h1, h2 {{ color: #333366; }}
+            .summary {{ background-color: #f5f5f5; padding: 20px; border-radius: 10px; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #333366; color: white; }}
+            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+            .forecast-img {{ width: 100%; max-width: 1000px; margin-top: 20px; }}
+            .positive {{ color: green; }}
+            .negative {{ color: red; }}
+        </style>
+    </head>
+    <body>
+        <h1>Rapport de Prévision du Prix Tesla</h1>
+        <p>Date du rapport: {today}</p>
+        
+        <div class="summary">
+            <h2>Résumé</h2>
+            <p>Modèle utilisé: <strong>{model_type}</strong></p>
+            <p>Dernier prix connu: <strong>${last_price:.2f}</strong> (au {last_date.strftime('%Y-%m-%d')})</p>
+            <p>Prix prévu à {len(forecast_df)} jours: <strong>${final_price:.2f}</strong></p>
+            <p>Variation prévue: <strong class="{'positive' if change_pct >= 0 else 'negative'}">{change_pct:.2f}%</strong></p>
+        </div>
+        
+        <h2>Prévision détaillée</h2>
+        <img src="{base_filename}.png" class="forecast-img" alt="Graphique de prévision Tesla">
+        
+        <h2>Tableau des prévisions</h2>
+        <table>
+            <tr>
+                <th>Date</th>
+                <th>Prix Prévu ($)</th>
+                <th>Borne inférieure ($)</th>
+                <th>Borne supérieure ($)</th>
+            </tr>
+    """
+    
+    # Ajouter les lignes du tableau
+    for _, row in forecast_df.iterrows():
+        date_str = row['Date'].strftime('%Y-%m-%d')
+        price = row['Prix_Prévu']
+        lower = row.get('Prix_Lower', '-')
+        upper = row.get('Prix_Upper', '-')
+        
+        html_content += f"""
+            <tr>
+                <td>{date_str}</td>
+                <td>{price:.2f}</td>
+                <td>{lower if isinstance(lower, str) else f'{lower:.2f}'}</td>
+                <td>{upper if isinstance(upper, str) else f'{upper:.2f}'}</td>
+            </tr>
+        """
+    
+    html_content += """
+        </table>
+        
+        <h2>Notes méthodologiques</h2>
+        <p>Ces prévisions sont basées sur des modèles statistiques et d'apprentissage automatique entraînés sur les données historiques de Tesla.</p>
+        <p>Les intervalles de confiance représentent une plage de 90% où le prix réel est susceptible de se trouver, selon le modèle.</p>
+        <p><em>Avertissement: Ces prévisions sont fournies à titre informatif uniquement et ne constituent pas des conseils d'investissement.</em></p>
+    </body>
+    </html>
+    """
+    
+    # Sauvegarder le rapport HTML
+    with open(report_dir / f"{base_filename}.html", 'w') as f:
+        f.write(html_content)
+    
+    print(f"Rapport de prévision sauvegardé dans {report_dir}")
+    return report_dir / f"{base_filename}.html"
