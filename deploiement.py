@@ -469,3 +469,187 @@ index_html = """
 </body>
 </html>
 """
+
+# Sauvegarder le template
+with open(RESULTS_DIR / "templates" / "index.html", 'w') as f:
+    f.write(index_html)
+
+# Créer un template pour les résultats HTML
+result_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prévision du Prix Tesla</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #333366;
+        }
+        .summary {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .forecast-img {
+            width: 100%;
+            max-width: 800px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #333366;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .positive {
+            color: green;
+        }
+        .negative {
+            color: red;
+        }
+        .back-link {
+            margin-top: 20px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prévision du Prix Tesla</h1>
+    
+    <div class="summary">
+        <h2>Résumé</h2>
+        <p>Modèle utilisé: <strong>{{ model_type }}</strong></p>
+        <p>Dernier prix connu: <strong>${{ "%.2f"|format(last_price) }}</strong> (au {{ last_date }})</p>
+        <p>Prix prévu à {{ steps }} jours: <strong>${{ "%.2f"|format(final_price) }}</strong></p>
+        <p>Variation prévue: <strong class="{% if change_pct >= 0 %}positive{% else %}negative{% endif %}">{{ "%.2f"|format(change_pct) }}%</strong></p>
+    </div>
+    
+    <h2>Graphique de prévision</h2>
+    <img src="data:image/png;base64,{{ plot_data }}" class="forecast-img" alt="Graphique de prévision Tesla">
+    
+    <h2>Tableau des prévisions</h2>
+    <table>
+        <tr>
+            <th>Date</th>
+            <th>Prix Prévu ($)</th>
+            <th>Borne inférieure ($)</th>
+            <th>Borne supérieure ($)</th>
+        </tr>
+        {% for date, price, lower, upper in table_data %}
+        <tr>
+            <td>{{ date }}</td>
+            <td>{{ "%.2f"|format(price) }}</td>
+            <td>{{ "%.2f"|format(lower) if lower != "-" else "-" }}</td>
+            <td>{{ "%.2f"|format(upper) if upper != "-" else "-" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    
+    <a href="/" class="back-link">← Retour à l'accueil</a>
+</body>
+</html>
+"""
+
+# Sauvegarder le template
+with open(RESULTS_DIR / "templates" / "result.html", 'w') as f:
+    f.write(result_html)
+
+# Routes Flask
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/predict')
+def predict():
+    # Récupérer les paramètres
+    steps = int(request.args.get('steps', 30))
+    last_price_str = request.args.get('last_price', '')
+    output_format = request.args.get('format', 'html')
+    
+    # Charger les données
+    model, metadata, latest_data = load_deployment_data()
+    
+    if model is None:
+        return jsonify({"error": "Impossible de charger le modèle"}), 500
+    
+    # Déterminer le dernier prix
+    last_price = None
+    if last_price_str and last_price_str.strip():
+        try:
+            last_price = float(last_price_str)
+        except ValueError:
+            pass
+    
+    if last_price is None:
+        last_price = metadata.get('last_price', 257.74)
+    
+    # Générer les prévisions
+    forecast_df = predict_tesla_prices(model, metadata, steps=steps, last_price=last_price)
+    
+    # Générer le graphique
+    plot = plot_tesla_forecast(forecast_df, last_price, 
+                               title=f"Prévision du Prix Tesla à {steps} jours")
+    
+    if output_format == 'json':
+        # Retourner les données en JSON
+        forecast_json = forecast_df.to_dict(orient='records')
+        response = {
+            'model_type': metadata.get('type', 'Inconnu'),
+            'last_price': last_price,
+            'forecast_horizon': steps,
+            'creation_date': datetime.datetime.now().strftime('%Y-%m-%d'),
+            'forecasts': forecast_json
+        }
+        return jsonify(response)
+    else:
+        # Retourner les données en HTML
+        import io
+        import base64
+        
+        # Convertir le graphique en base64 pour l'affichage HTML
+        img_data = io.BytesIO()
+        plot.savefig(img_data, format='png')
+        img_data.seek(0)
+        plot_data = base64.b64encode(img_data.getvalue()).decode()
+        plt.close()
+        
+        # Préparer les données pour le template
+        model_type = metadata.get('type', 'Inconnu')
+        last_date = pd.to_datetime(metadata.get('last_date', 'Inconnu')).strftime('%Y-%m-%d')
+        final_price = forecast_df['Prix_Prévu'].iloc[-1]
+        change_pct = (final_price / last_price - 1) * 100
+        
+        # Préparer les données du tableau
+        table_data = []
+        for _, row in forecast_df.iterrows():
+            date_str = row['Date'].strftime('%Y-%m-%d')
+            price = row['Prix_Prévu']
+            lower = row.get('Prix_Lower', '-')
+            upper = row.get('Prix_Upper', '-')
+            table_data.append((date_str, price, lower, upper))
+        
+        return render_template('result.html', 
+                              model_type=model_type,
+                              last_price=last_price,
+                              last_date=last_date,
+                              final_price=final_price,
+                              change_pct=change_pct,
+                              steps=steps,
+                              plot_data=plot_data,
+                              table_data=table_data)
