@@ -374,3 +374,98 @@ def save_forecast_report(forecast_df, last_price, metadata, plot):
     
     print(f"Rapport de prévision sauvegardé dans {report_dir}")
     return report_dir / f"{base_filename}.html"
+
+# Création d'une API Flask pour servir les prévisions
+app = Flask(__name__, template_folder=str(RESULTS_DIR / "templates"))
+
+# Créer le dossier templates s'il n'existe pas
+os.makedirs(RESULTS_DIR / "templates", exist_ok=True)
+
+# Créer un template HTML simple
+index_html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API de Prévision Tesla</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #333366;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, select {
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #333366;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            cursor: pointer;
+        }
+        .api-info {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        code {
+            background-color: #eee;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>API de Prévision du Prix Tesla</h1>
+    
+    <h2>Générer une prévision</h2>
+    <form action="/predict" method="get">
+        <div class="form-group">
+            <label for="steps">Nombre de jours à prévoir:</label>
+            <input type="number" id="steps" name="steps" value="30" min="1" max="90">
+        </div>
+        
+        <div class="form-group">
+            <label for="last_price">Dernier prix connu (laisser vide pour utiliser la valeur par défaut):</label>
+            <input type="number" id="last_price" name="last_price" step="0.01">
+        </div>
+        
+        <div class="form-group">
+            <label for="format">Format de sortie:</label>
+            <select id="format" name="format">
+                <option value="html">HTML (visualisation)</option>
+                <option value="json">JSON (données brutes)</option>
+            </select>
+        </div>
+        
+        <button type="submit">Générer la prévision</button>
+    </form>
+    
+    <div class="api-info">
+        <h2>Informations API</h2>
+        <p>Endpoint de prévision: <code>/predict</code></p>
+        <p>Paramètres:</p>
+        <ul>
+            <li><code>steps</code>: Nombre de jours à prévoir (défaut: 30)</li>
+            <li><code>last_price</code>: Dernier prix connu (optionnel)</li>
+            <li><code>format</code>: Format de sortie - 'html' ou 'json' (défaut: 'html')</li>
+        </ul>
+        <p>Exemple: <code>/predict?steps=60&format=json</code></p>
+    </div>
+</body>
+</html>
+"""
